@@ -2,22 +2,34 @@ from bsi_benchmark import prompt_loader
 
 
 class FakeResponse:
-    def __init__(self, text):
-        self.text = text
-        self.encoding = None
+    def __init__(self, body, status_code=200):
+        self.body = body
+        self.status_code = status_code
+        self.url = "https://example.invalid/test"
 
-    def raise_for_status(self):
-        return None
+    @property
+    def ok(self):
+        return 200 <= self.status_code < 300
+
+
+class FakeHttpClient:
+    def __init__(self, responses=None):
+        self.responses = list(responses or [])
+        self.requested = []
+
+    def get(self, url):
+        self.requested.append(url)
+        if self.responses:
+            response = self.responses.pop(0)
+            if isinstance(response, Exception):
+                raise response
+            return response
+        return FakeResponse("# BSI v3.5 source\n")
 
 
 def test_load_canonical_bsi_v35_fetches_master_and_all_authoritative_refs(monkeypatch):
-    requested = []
-
-    def fake_get(url, timeout):
-        requested.append(url)
-        return FakeResponse("# BSI v3.5 source\n")
-
-    monkeypatch.setattr(prompt_loader.requests, "get", fake_get)
+    client = FakeHttpClient()
+    monkeypatch.setattr(prompt_loader, "HttpClient", lambda: client)
 
     prompt, provenance = prompt_loader.load_canonical_bsi_v35(
         repository="owner/repository",
@@ -28,7 +40,7 @@ def test_load_canonical_bsi_v35_fetches_master_and_all_authoritative_refs(monkey
     assert "{title}" in prompt
     assert "{abstract}" in prompt
     assert "{full_text}" in prompt
-    assert len(requested) == 1 + len(prompt_loader.AUTHORITATIVE_REFERENCES)
+    assert len(client.requested) == 1 + len(prompt_loader.AUTHORITATIVE_REFERENCES)
     assert provenance["framework_version"] == "3.5"
     assert provenance["ref"] == "test-branch"
     assert provenance["master_prompt"]["sha256"]
@@ -39,23 +51,18 @@ def test_load_canonical_bsi_v35_fetches_master_and_all_authoritative_refs(monkey
 
 
 def test_load_canonical_bsi_v35_fails_if_a_reference_is_missing(monkeypatch):
-    calls = 0
-
-    def fake_get(url, timeout):
-        nonlocal calls
-        calls += 1
-        if calls == 3:
-            raise prompt_loader.requests.HTTPError("404")
-        return FakeResponse("# source\n")
-
-    monkeypatch.setattr(prompt_loader.requests, "get", fake_get)
+    client = FakeHttpClient(
+        [FakeResponse("# source\n"), FakeResponse("# source\n"),
+         FakeResponse("Not Found", status_code=404)]
+    )
+    monkeypatch.setattr(prompt_loader, "HttpClient", lambda: client)
 
     try:
         prompt_loader.load_canonical_bsi_v35(
             repository="owner/repository",
             ref="test-branch",
         )
-    except prompt_loader.requests.HTTPError:
-        pass
+    except RuntimeError as exc:
+        assert "HTTP 404" in str(exc)
     else:
         raise AssertionError("Missing authoritative reference must fail closed")
