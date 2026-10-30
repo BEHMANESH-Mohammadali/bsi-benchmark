@@ -8,7 +8,7 @@ from __future__ import annotations
 import hashlib
 from urllib.parse import quote
 
-import requests
+from bsi_benchmark.network.client import HttpClient
 
 PLACEHOLDER_BLOCK = (
     "\n\n---\n"
@@ -68,12 +68,16 @@ def load_canonical_bsi_v35(
         raise ValueError("repository must be in owner/name form")
     owner, name = repository.split("/", 1)
     base = f"https://raw.githubusercontent.com/{owner}/{name}/refs/heads/{quote(ref, safe='/')}/"
+    client = HttpClient()
 
     def fetch(path: str) -> dict[str, str]:
-        response = requests.get(base + path, timeout=timeout)
-        response.raise_for_status()
-        response.encoding = "utf-8"
-        content = response.text
+        response = client.get(base + path)
+        if not response.ok:
+            raise RuntimeError(
+                f"Unable to fetch canonical BSI reference '{path}': "
+                f"HTTP {response.status_code}"
+            )
+        content = response.body
         return {
             "path": path,
             "sha256": hashlib.sha256(content.encode("utf-8")).hexdigest(),
