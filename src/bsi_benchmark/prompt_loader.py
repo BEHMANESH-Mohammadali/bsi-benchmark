@@ -15,11 +15,11 @@ PLACEHOLDER_BLOCK = (
     "[bsi-benchmark: article injected below by the compare command]\n"
     "Title: {title}\n"
     "Abstract: {abstract}\n"
-    "\nFull text (may be empty if unavailable):\\n{full_text}\\n"
+    "\nFull text (may be empty if unavailable):\n{full_text}\n"
     "\nتذکر زبانی: تمام خروجی تحلیل باید کاملاً به زبان فارسی نوشته شود. "
     "اصطلاحات تخصصی به فارسی بیان می‌شوند و معادل انگلیسی آن‌ها در پرانتز "
     "بلافاصله بعد از کلمهٔ فارسی ذکر می‌شود. هیچ بخشی از پاسخ نباید به زبان "
-    "دیگری نوشته شود.\\n"
+    "دیگری نوشته شود.\n"
 )
 
 CANONICAL_REPOSITORY = "BEHMANESH-Mohammadali/behmanesh-index-prompt"
