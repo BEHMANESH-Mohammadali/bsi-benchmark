@@ -77,6 +77,9 @@ class RunMetadata:
     # tool currently drives end-to-end, but the field exists so a future
     # framework (see ROADMAP.md, plugin architecture) does not require a
     # schema change to be distinguishable in stored records.
+    prompt_source: Optional[str] = None
+    prompt_sha256: Optional[str] = None
+    prompt_reference_hashes: Optional[dict] = None
     framework_name: str = "bsi"
 
     @classmethod
@@ -90,6 +93,9 @@ class RunMetadata:
         max_tokens: Optional[int] = None,
         prompt_version: Optional[str] = None,
         framework_name: str = "bsi",
+        prompt_source: Optional[str] = None,
+        prompt_sha256: Optional[str] = None,
+        prompt_reference_hashes: Optional[dict] = None,
     ) -> "RunMetadata":
         """
         Build a RunMetadata snapshot for 'right now'.
@@ -112,5 +118,8 @@ class RunMetadata:
             temperature=temperature,
             max_tokens=max_tokens,
             prompt_version=prompt_version,
+            prompt_source=prompt_source,
+            prompt_sha256=prompt_sha256,
+            prompt_reference_hashes=prompt_reference_hashes,
             framework_name=framework_name,
         )
