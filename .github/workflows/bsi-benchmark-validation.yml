@@ -1,0 +1,32 @@
+name: BSI benchmark validation
+
+on:
+  push:
+    branches:
+      - "migration/**"
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  benchmark-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install package and test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e .
+          python -m pip install pytest
+      - name: Compile Python modules
+        run: python -m compileall -q src
+      - name: Run test suite
+        run: python -m pytest -q
