@@ -84,11 +84,20 @@ def main() -> int:
     )
     compare.add_argument(
         "--bsi-prompt-file",
-        required=True,
-        help="Path to the BSI master prompt template ({title}/{abstract} "
-             "placeholders), e.g. a copy of MASTER_PROMPT_BSI_v3.4.2.md "
-             "from the main BSI repository. Not fabricated by this tool -- "
-             "supply the real prompt you want benchmarked.",
+        default=None,
+        help="Optional local BSI master prompt file. If omitted, the canonical "
+             "BSI v3.5 master prompt and authoritative references are fetched "
+             "from --bsi-prompt-repo at --bsi-prompt-ref.",
+    )
+    compare.add_argument(
+        "--bsi-prompt-repo",
+        default="BEHMANESH-Mohammadali/behmanesh-index-prompt",
+        help="GitHub owner/repository for the canonical BSI prompt (default: official repository).",
+    )
+    compare.add_argument(
+        "--bsi-prompt-ref",
+        default="main",
+        help="Git ref for the canonical BSI prompt (default: main; use a reviewed migration branch before merge).",
     )
 
     compare.add_argument(
@@ -118,11 +127,10 @@ def main() -> int:
 
     compare.add_argument(
         "--bsi-source-url",
-        default="https://github.com/ibstrade11-source/behmanesh-index-prompt/blob/main/MASTER_PROMPT_BSI_v3.4.2.md",
+        default=None,
         help="Link to the canonical BSI prompt file, printed in the report "
-             "so readers can go read the exact unedited prompt themselves. "
-             "Override if you benchmarked against a different branch/file, "
-             "e.g. .../blob/conceptual-refactor-volume1/MASTER_PROMPT_BSI_v3.4.2.md. "
+             "so readers can inspect the exact canonical prompt. Override if "
+             "you benchmarked against a different branch/file. "
              "Pass '' to omit the link entirely.",
     )
     compare.add_argument(
@@ -137,10 +145,8 @@ def main() -> int:
         help="Record the max_tokens setting used, if you know it.",
     )
     compare.add_argument(
-        "--prompt-version", default=None,
-        help="Record a version label for the prompt used (e.g. "
-             "'v3.4.2'), if you want it distinguishable in stored "
-             "records from other prompt versions later.",
+        "--prompt-version", default="3.5",
+        help="Prompt version recorded in provenance (default: 3.5).",
     )
     compare.add_argument("--output", required=True, help="Output file path prefix (writes .md and .json).")
 
@@ -251,7 +257,9 @@ def main() -> int:
         from bsi_benchmark.pipeline import PipelineRunner
         from bsi_benchmark.comparison import ComparisonSpec, CrossModelRunner, render_markdown
         from bsi_benchmark.comparison.json_export import save as save_json
-        from bsi_benchmark.prompt_loader import load_bsi_prompt
+        from bsi_benchmark.prompt_loader import (
+            load_bsi_prompt, load_canonical_bsi_v35,
+        )
         from bsi_benchmark.run_metadata import RunMetadata
         from dataclasses import asdict as _asdict
 
@@ -266,11 +274,35 @@ def main() -> int:
         if args.raw_prompt_file:
             raw_prompt = load_bsi_prompt(args.raw_prompt_file, label="raw-prompt-file")
 
-        # Permanent fix: a raw copy of MASTER_PROMPT_BSI_v3.4.2.md (or any
-        # other BSI master prompt) has no {title}/{abstract} placeholders.
-        # load_bsi_prompt() auto-appends them if missing, so the file can
-        # be used exactly as downloaded -- no manual edit required.
-        bsi_prompt = load_bsi_prompt(args.bsi_prompt_file, label="bsi-prompt-file")
+        prompt_provenance = None
+        if args.bsi_prompt_file:
+            bsi_prompt = load_bsi_prompt(
+                args.bsi_prompt_file, label="bsi-prompt-file"
+            )
+            import hashlib
+            prompt_provenance = {
+                "framework_version": args.prompt_version,
+                "source": os.path.abspath(args.bsi_prompt_file),
+                "package_sha256": hashlib.sha256(
+                    bsi_prompt.encode("utf-8")
+                ).hexdigest(),
+            }
+        else:
+            try:
+                bsi_prompt, prompt_provenance = load_canonical_bsi_v35(
+                    repository=args.bsi_prompt_repo,
+                    ref=args.bsi_prompt_ref,
+                )
+            except Exception as e:
+                print(f"ERROR loading canonical BSI v3.5 prompt package: {e}")
+                return 1
+            print(
+                f"BSI PROMPT : v{prompt_provenance['framework_version']} "
+                f"from {prompt_provenance['repository']}@{prompt_provenance['ref']}"
+            )
+            print(
+                f"PROMPT SHA : {prompt_provenance['package_sha256']}"
+            )
 
         try:
             dataset = PipelineRunner().run(
@@ -391,14 +423,41 @@ def main() -> int:
         elif os.path.exists(ckpt_path):
             print(f"Resuming from checkpoint: {ckpt_path}")
 
+        if args.bsi_source_url is not None:
+            source_url = args.bsi_source_url or None
+        elif prompt_provenance and "repository" in prompt_provenance:
+            source_url = (
+                f"https://github.com/{prompt_provenance['repository']}/blob/"
+                f"{prompt_provenance['ref']}/MASTER_PROMPT_BSI_v3.5.md"
+            )
+        else:
+            source_url = None
+
         report = CrossModelRunner().run(
             dataset, spec,
-            source_url=args.bsi_source_url or None,
+            source_url=source_url,
             run_metadata=_asdict(RunMetadata.capture(
                 repo_dir=os.path.dirname(os.path.abspath(__file__)),
                 temperature=args.temperature,
                 max_tokens=args.max_tokens,
                 prompt_version=args.prompt_version,
+                prompt_source=(
+                    f"{prompt_provenance['repository']}@{prompt_provenance['ref']}"
+                    if prompt_provenance and "repository" in prompt_provenance
+                    else prompt_provenance.get("source") if prompt_provenance else None
+                ),
+                prompt_sha256=(
+                    prompt_provenance.get("package_sha256")
+                    if prompt_provenance else None
+                ),
+                prompt_reference_hashes=(
+                    {
+                        key: value["sha256"]
+                        for key, value in prompt_provenance.get(
+                            "authoritative_references", {}
+                        ).items()
+                    } if prompt_provenance else {}
+                ),
             )),
         
             checkpoint_path=ckpt_path,)
