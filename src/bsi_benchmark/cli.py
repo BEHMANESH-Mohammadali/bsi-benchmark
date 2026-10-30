@@ -127,7 +127,7 @@ def main() -> int:
 
     compare.add_argument(
         "--bsi-source-url",
-        default="https://github.com/BEHMANESH-Mohammadali/behmanesh-index-prompt/blob/main/MASTER_PROMPT_BSI_v3.5.md",
+        default=None,
         help="Link to the canonical BSI prompt file, printed in the report "
              "so readers can inspect the exact canonical prompt. Override if "
              "you benchmarked against a different branch/file. "
@@ -423,9 +423,19 @@ def main() -> int:
         elif os.path.exists(ckpt_path):
             print(f"Resuming from checkpoint: {ckpt_path}")
 
+        if args.bsi_source_url is not None:
+            source_url = args.bsi_source_url or None
+        elif prompt_provenance and "repository" in prompt_provenance:
+            source_url = (
+                f"https://github.com/{prompt_provenance['repository']}/blob/"
+                f"{prompt_provenance['ref']}/MASTER_PROMPT_BSI_v3.5.md"
+            )
+        else:
+            source_url = None
+
         report = CrossModelRunner().run(
             dataset, spec,
-            source_url=args.bsi_source_url or None,
+            source_url=source_url,
             run_metadata=_asdict(RunMetadata.capture(
                 repo_dir=os.path.dirname(os.path.abspath(__file__)),
                 temperature=args.temperature,
